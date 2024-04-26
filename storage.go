@@ -89,6 +89,17 @@ func (s *PostgresStore) CreateAccount(acc *Account) error {
 }
 
 func (s *PostgresStore) UpdateAccount(acc *Account) error {
+	query := `
+		UPDATE account
+		SET first_name = $1, last_name = $2
+		WHERE id = $3
+	`
+
+	_, err := s.db.Exec(query, acc.FirstName, acc.LastName, acc.ID)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

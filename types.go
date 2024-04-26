@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+type TransferRequest struct {
+	ToAccount   int `json:"to_account"`
+	FromAccount int `json:"from_account"`
+	Amount      int `json:"amount"`
+}
+
 type CreateAccountRequest struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
@@ -20,10 +26,14 @@ type Account struct {
 }
 
 func NewAccount(firstName string, lastName string) *Account {
+	// Generate a random number between 10000000 and 99999999 (inclusive)
+	// Ensures that the number does not start or end with zero
+	number := int64(rand.Intn(90000000) + 10000000)
+
 	return &Account{
 		FirstName: firstName,
 		LastName:  lastName,
-		Number:    int64(rand.Intn(1000000)),
+		Number:    number,
 		CreatedAt: time.Now().UTC(),
 	}
 }

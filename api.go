@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"io"
 	"log"
 	"net/http"
 )
@@ -29,6 +30,7 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("/account", makeHTTPHandlerFunc(s.handleAccount))
 	router.HandleFunc("/account/{id}", makeHTTPHandlerFunc(s.handleAccountAndID))
+	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.handleTransfer))
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
 
@@ -76,6 +78,8 @@ func (s *APIServer) handleAccountAndID(w http.ResponseWriter, r *http.Request) e
 		return WriteJSON(w, http.StatusOK, account)
 	case http.MethodDelete:
 		return s.handleDeleteAccount(w, r)
+	case http.MethodPut:
+		return s.handleUpdateAccount(w, r)
 	default:
 		return fmt.Errorf("unsupported method: %s", r.Method)
 	}
@@ -105,6 +109,33 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	return WriteJSON(w, http.StatusOK, createdAccount)
 }
 
+func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
+	id, err := getID(r)
+	if err != nil {
+		return err
+	}
+
+	var account Account
+	if err := json.NewDecoder(r.Body).Decode(&account); err != nil {
+		return err
+	}
+
+	account.ID = id
+
+	if err := s.store.UpdateAccount(&account); err != nil {
+		return err
+	}
+
+	// Retrieve the account from the database to get the most up-to-date information
+	// about the account, including any database-generated fields or default values
+	updatedAccount, err := s.store.GetAccountByID(id)
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, updatedAccount)
+}
+
 // handleTransfer handles requests to transfer funds between accounts.
 // It supports HTTP method POST.
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
@@ -121,9 +152,21 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleTransfer handles requests to transfer funds between accounts.
-// TODO: finish
+// TODO: finish handler
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	transferRequest := new(TransferRequest)
+	if err := json.NewDecoder(r.Body).Decode(transferRequest); err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}(r.Body)
+
+	return WriteJSON(w, http.StatusOK, transferRequest)
 }
 
 // WriteJSON writes the given data as JSON to the HTTP response with the provided status code.
