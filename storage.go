@@ -11,9 +11,9 @@ import (
 type Storage interface {
 	CreateAccount(acc *Account) error
 	UpdateAccount(acc *Account) error
-	DeleteAccount(id int) error
+	DeleteAccount(id string) error
 	GetAccounts() ([]*Account, error)
-	GetAccountByID(id int) (*Account, error)
+	GetAccountByID(id string) (*Account, error)
 }
 
 type PostgresStore struct {
@@ -52,7 +52,7 @@ func (s *PostgresStore) Init() error {
 func (s *PostgresStore) CreateAccountTable() error {
 	query := `
         CREATE TABLE IF NOT EXISTS account (
-            id SERIAL PRIMARY KEY,
+            id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255) NOT NULL,
             number BIGINT NOT NULL,
@@ -73,13 +73,17 @@ func (s *PostgresStore) CreateAccount(acc *Account) error {
 	query := `
         INSERT INTO account (first_name, last_name, number, balance, created_at) 
         VALUES ($1, $2, $3, $4, $5) 
+        RETURNING id
     `
 
-	_, err := s.db.Exec(query, acc.FirstName, acc.LastName, acc.Number, acc.Balance, acc.CreatedAt)
-
+	var id string
+	err := s.db.QueryRow(query, acc.FirstName, acc.LastName, acc.Number, acc.Balance, acc.CreatedAt).Scan(&id)
 	if err != nil {
 		return err
 	}
+
+	// Set the ID of the inserted account
+	acc.ID = id
 
 	return nil
 }
@@ -88,7 +92,11 @@ func (s *PostgresStore) UpdateAccount(acc *Account) error {
 	return nil
 }
 
-func (s *PostgresStore) DeleteAccount(id int) error {
+func (s *PostgresStore) DeleteAccount(id string) error {
+	_, err := s.db.Exec("DELETE FROM account WHERE id = $1", id)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -118,7 +126,7 @@ func (s *PostgresStore) GetAccounts() ([]*Account, error) {
 	return accounts, nil
 }
 
-func (s *PostgresStore) GetAccountByID(id int) (*Account, error) {
+func (s *PostgresStore) GetAccountByID(id string) (*Account, error) {
 	rows, err := s.db.Query("SELECT * FROM account WHERE id = $1", id)
 	if err != nil {
 		return nil, err
@@ -128,7 +136,7 @@ func (s *PostgresStore) GetAccountByID(id int) (*Account, error) {
 		return scanIntoAccount(rows)
 	}
 
-	return nil, fmt.Errorf("account %d not found", id)
+	return nil, fmt.Errorf("account %s not found", id)
 }
 
 func scanIntoAccount(rows *sql.Rows) (*Account, error) {
