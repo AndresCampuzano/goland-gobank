@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">GOLAND-GOBANK</h1>
 <p align="center">
-    <em>Should be called Golang instead of Goland</em>
+    <em>Should be called Golang instead of Goland, I know...</em>
 </p>
 <p align="center">
 	<img src="https://img.shields.io/github/license/AndresCampuzano/goland-gobank?style=flat&color=0080ff" alt="license">
