@@ -3,11 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
 	"net/http"
+	"os"
 )
 
 // APIServer represents an HTTP server for handling API requests.
@@ -29,7 +31,7 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandlerFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", makeHTTPHandlerFunc(s.handleAccountAndID))
+	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandlerFunc(s.handleAccountAndID), s.store))
 	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.handleTransfer))
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
@@ -97,6 +99,12 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	if err := s.store.CreateAccount(account); err != nil {
 		return err
 	}
+
+	tokenString, err := createJWT(account)
+	if err != nil {
+		return err
+	}
+	fmt.Println("JWT token: ", tokenString)
 
 	// Retrieve the account from the database to get the most up-to-date information
 	// about the account, including any database-generated fields or default values
@@ -174,7 +182,86 @@ func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+
 	return json.NewEncoder(w).Encode(v)
+}
+
+// createJWT generates a JSON Web Token (JWT) containing the specified account information.
+// It returns the signed JWT token as a string and any error encountered during token generation.
+func createJWT(account *Account) (string, error) {
+	claims := &jwt.MapClaims{
+		"expiresAt":     15000,
+		"accountNumber": account.Number,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	secret := os.Getenv("JWT_SECRET")
+
+	return token.SignedString([]byte(secret))
+}
+
+func permissionDeniedError(w http.ResponseWriter) {
+	WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "permission denied"})
+}
+
+// withJWTAuth adds JWT authentication to the provided HTTP handler.
+// It validates the included JWT and authorizes the request.
+// If the JWT is invalid or the request is unauthorized, it responds with a permission denied error.
+// Returns an HTTP handler that wraps the original handler.
+func withJWTAuth(fn http.HandlerFunc, s Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("calling JWT auth middleware")
+
+		tokenString := r.Header.Get("Authorization")
+		token, err := validateJWT(tokenString)
+		if err != nil {
+			permissionDeniedError(w)
+			return
+		}
+
+		if !token.Valid {
+			permissionDeniedError(w)
+			return
+		}
+
+		userID, err := getID(r)
+		if err != nil {
+			permissionDeniedError(w)
+			return
+		}
+		account, err := s.GetAccountByID(userID)
+		if err != nil {
+			permissionDeniedError(w)
+			return
+		}
+
+		claims := token.Claims.(jwt.MapClaims)
+		if account.Number != int(claims["accountNumber"].(float64)) {
+			permissionDeniedError(w)
+			return
+		}
+
+		if err != nil {
+			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "invalid token"})
+			return
+		}
+
+		fn(w, r)
+	}
+}
+
+// validateJWT validates the given JWT token string. It verifies the signature
+// and checks if the token is well-formed and valid.
+func validateJWT(tokenString string) (*jwt.Token, error) {
+	secret := os.Getenv("JWT_SECRET")
+
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		return []byte(secret), nil
+	})
 }
 
 // apiFunc is a type representing a function that handles HTTP requests and returns an error.
