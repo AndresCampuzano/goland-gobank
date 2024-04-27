@@ -3,13 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
 	"net/http"
-	"os"
 )
 
 // APIServer represents an HTTP server for handling API requests.
@@ -37,7 +35,11 @@ func (s *APIServer) Run() {
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
 
-	http.ListenAndServe(s.listenAddr, router)
+	err := http.ListenAndServe(s.listenAddr, router)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 }
 
 func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
@@ -50,10 +52,8 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 
 		acc, err := s.store.GetAccountByNumber(req.Number)
 		if err != nil {
-			return err // TODO: handle this resp as JSON
+			return err
 		}
-
-		//fmt.Printf("%+v\n", acc)
 
 		if !acc.ValidatePassword(req.Password) {
 			return fmt.Errorf("not authorized")
@@ -88,7 +88,7 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 // handleGetAccountByID handles requests to retrieve an account by ID.
-func (s *APIServer) handleGetAccounts(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) handleGetAccounts(w http.ResponseWriter, _ *http.Request) error {
 	accounts, err := s.store.GetAccounts()
 	if err != nil {
 		return err
@@ -142,8 +142,7 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 	fmt.Println("JWT token: ", tokenString)
 
-	// Retrieve the account from the database to get the most up-to-date information
-	// about the account, including any database-generated fields or default values
+	// Recovering account from DB
 	createdAccount, err := s.store.GetAccountByID(account.ID)
 	if err != nil {
 		return err
@@ -153,6 +152,7 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	return WriteJSON(w, http.StatusOK, createdAccount)
 }
 
+// handleUpdateAccount updates an existing account based on the JSON data received in the request body.
 func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
 	id, err := getID(r)
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleTransfer handles requests to transfer funds between accounts.
-// TODO: finish handler
+// FIXME: finish
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
 	transferRequest := new(TransferRequest)
 	if err := json.NewDecoder(r.Body).Decode(transferRequest); err != nil {
@@ -221,84 +221,6 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
-// createJWT generates a JSON Web Token (JWT) containing the specified account information.
-// It returns the signed JWT token as a string and any error encountered during token generation.
-func createJWT(account *Account) (string, error) {
-	claims := &jwt.MapClaims{
-		"expiresAt":     15000,
-		"accountNumber": account.Number,
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	secret := os.Getenv("JWT_SECRET")
-
-	return token.SignedString([]byte(secret))
-}
-
-func permissionDeniedError(w http.ResponseWriter) {
-	WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "permission denied"})
-}
-
-// withJWTAuth adds JWT authentication to the provided HTTP handler.
-// It validates the included JWT and authorizes the request.
-// If the JWT is invalid or the request is unauthorized, it responds with a permission denied error.
-// Returns an HTTP handler that wraps the original handler.
-func withJWTAuth(fn http.HandlerFunc, s Storage) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("calling JWT auth middleware")
-
-		tokenString := r.Header.Get("Authorization")
-		token, err := validateJWT(tokenString)
-		if err != nil {
-			permissionDeniedError(w)
-			return
-		}
-
-		if !token.Valid {
-			permissionDeniedError(w)
-			return
-		}
-
-		userID, err := getID(r)
-		if err != nil {
-			permissionDeniedError(w)
-			return
-		}
-		account, err := s.GetAccountByID(userID)
-		if err != nil {
-			permissionDeniedError(w)
-			return
-		}
-
-		claims := token.Claims.(jwt.MapClaims)
-		if account.Number != int(claims["accountNumber"].(float64)) {
-			permissionDeniedError(w)
-			return
-		}
-
-		if err != nil {
-			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "invalid token"})
-			return
-		}
-
-		fn(w, r)
-	}
-}
-
-// validateJWT validates the given JWT token string. It verifies the signature
-// and checks if the token is well-formed and valid.
-func validateJWT(tokenString string) (*jwt.Token, error) {
-	secret := os.Getenv("JWT_SECRET")
-
-	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		return []byte(secret), nil
-	})
-}
-
 // apiFunc is a type representing a function that handles HTTP requests and returns an error.
 type apiFunc func(http.ResponseWriter, *http.Request) error
 
@@ -313,7 +235,11 @@ type ApiError struct {
 func makeHTTPHandlerFunc(f apiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := f(w, r); err != nil {
-			WriteJSON(w, http.StatusBadRequest, ApiError{Error: err.Error()})
+			err := WriteJSON(w, http.StatusBadRequest, ApiError{Error: err.Error()})
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
 		}
 	}
 }

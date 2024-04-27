@@ -16,6 +16,7 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// TransferRequest FIXME: finish
 type TransferRequest struct {
 	ToAccount   int `json:"to_account"`
 	FromAccount int `json:"from_account"`
