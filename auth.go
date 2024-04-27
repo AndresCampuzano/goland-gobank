@@ -51,21 +51,7 @@ func withJWTAuth(fn http.HandlerFunc, s Storage) http.HandlerFunc {
 			return
 		}
 
-		userID, err := getID(r)
-		if err != nil {
-			permissionDeniedError(w)
-			return
-		}
-
-		account, err := s.GetAccountByID(userID)
-		if err != nil {
-			permissionDeniedError(w)
-			return
-		}
-
-		claims := token.Claims.(jwt.MapClaims)
-		if account.Number != int(claims["accountNumber"].(float64)) {
-			permissionDeniedError(w)
+		if validateRequestedAccount(w, r, err, s, token) {
 			return
 		}
 
@@ -80,6 +66,29 @@ func withJWTAuth(fn http.HandlerFunc, s Storage) http.HandlerFunc {
 
 		fn(w, r)
 	}
+}
+
+// validateRequestedAccount validates if the requested account is the same that the requester
+// This can be deleted for other validations
+func validateRequestedAccount(w http.ResponseWriter, r *http.Request, err error, s Storage, token *jwt.Token) bool {
+	userID, err := getID(r)
+	if err != nil {
+		permissionDeniedError(w)
+		return true
+	}
+
+	account, err := s.GetAccountByID(userID)
+	if err != nil {
+		permissionDeniedError(w)
+		return true
+	}
+
+	claims := token.Claims.(jwt.MapClaims)
+	if account.Number != int(claims["accountNumber"].(float64)) {
+		permissionDeniedError(w)
+		return true
+	}
+	return false
 }
 
 // validateJWT validates the given JWT token string. It verifies the signature
