@@ -87,7 +87,7 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 	}
 }
 
-// handleGetAccountByID handles requests to retrieve an account by ID.
+// handleGetAccounts handles requests to retrieve all accounts.
 func (s *APIServer) handleGetAccounts(w http.ResponseWriter, _ *http.Request) error {
 	accounts, err := s.store.GetAccounts()
 	if err != nil {
@@ -96,7 +96,7 @@ func (s *APIServer) handleGetAccounts(w http.ResponseWriter, _ *http.Request) er
 	return WriteJSON(w, http.StatusOK, accounts)
 }
 
-// handleCreateAccount handles requests to create a new account.
+// handleAccountAndID handles requests to retrieve an account by ID.
 func (s *APIServer) handleAccountAndID(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
@@ -120,7 +120,6 @@ func (s *APIServer) handleAccountAndID(w http.ResponseWriter, r *http.Request) e
 	}
 }
 
-// handleDeleteAccount handles requests to delete an account.
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
 	req := new(CreateAccountRequest)
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
@@ -180,7 +179,6 @@ func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) 
 	return WriteJSON(w, http.StatusOK, updatedAccount)
 }
 
-// handleTransfer handles requests to transfer funds between accounts.
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
 	id, err := getID(r)
 	if err != nil {
